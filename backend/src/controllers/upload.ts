@@ -18,6 +18,6 @@ const uploadFile = (req: Request, res: Response, next: NextFunction) => {
     fileName: path.posix.join('/', UPLOAD_PATH, path.basename(fileInfo.filename)) + path.extname(fileInfo.originalname),
     originalName: path.basename(fileInfo.originalname)
   });
-}
+};
 
 export default uploadFile;

@@ -20,7 +20,7 @@ const {
 const corsOptions = {
   origin: ORIGIN_ALLOW,
   credentials: true
-}
+};
 
 mongoose.connect(DB_ADDRESS);
 

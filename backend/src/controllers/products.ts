@@ -51,7 +51,7 @@ export const createProduct = (req: Request, res: Response, next: NextFunction) =
         next(error);
       }
     });
-}
+};
 
 
 function updateProductObject(dest:Partial<IProduct>, src:Partial<IProduct>) {
@@ -119,7 +119,7 @@ export const updateProduct = (req: Request, res: Response, next: NextFunction) =
         next(error);
       }
     });
-}
+};
 
 
 export const deleteProduct = (req: Request, res: Response, next: NextFunction) => {
@@ -155,4 +155,4 @@ export const deleteProduct = (req: Request, res: Response, next: NextFunction) =
         next(error);
       }
     });
-}
+};

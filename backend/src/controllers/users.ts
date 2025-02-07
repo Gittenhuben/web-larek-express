@@ -19,18 +19,18 @@ const {
 } = process.env;
 
 
-function getUserIdByRefreshToken(req: Request):Promise<string> {
+function getUserIdByRefreshToken(req: Request, next: NextFunction) {
   const token = req.cookies[COOKIE_NAME];
 
   if (!token) {
-    throw new BadRequestError('Ошибка: Нет куки');
+    return next(new BadRequestError('Ошибка: Нет куки'));
   }
 
   let payload;
   try {
     payload = jwt.verify(token, SECRET_REFRESH_KEY);
   } catch (err) {
-    throw new AuthorizationError('Ошибка: Неправильный токен');
+    return next(new AuthorizationError('Ошибка: Неправильный токен'));
   }
 
   const userId = (payload as jwt.JwtPayload)._id;
@@ -38,19 +38,20 @@ function getUserIdByRefreshToken(req: Request):Promise<string> {
   return User.findOne({ _id: userId }).select('+tokens')
     .then(user => {
       if (!user) {
-        throw new NotFoundError('Ошибка: Неправильный токен');
+        return next(new NotFoundError('Ошибка: Неправильный токен'));
       }
 
       if (!user.tokens.some(t => t.token === token)) {
-        throw new AuthorizationError('Ошибка: Неправильный токен');
+        return next(new AuthorizationError('Ошибка: Неправильный токен'));
       }
 
       return userId;
-    });
+    })
+    .catch(error => next(error));
 }
 
 
-function createTokens(userId: string, res: Response, status = 200) {
+function createTokens(userId: string, res: Response, next: NextFunction, status = 200) {
   const accessToken = jwt.sign({ _id: userId }, SECRET_ACCESS_KEY, { expiresIn: AUTH_ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign({ _id: userId }, SECRET_REFRESH_KEY, { expiresIn: AUTH_REFRESH_TOKEN_EXPIRY });
 
@@ -61,7 +62,7 @@ function createTokens(userId: string, res: Response, status = 200) {
   )
     .then(user => {
       if (!user) {
-        throw new AuthorizationError('Ошибка: Токены не добавились в базу данных');
+        return next(new AuthorizationError('Ошибка: Токены не добавились в базу данных'));
       }
 
       let refreshExpiryMs;
@@ -86,7 +87,8 @@ function createTokens(userId: string, res: Response, status = 200) {
         success: true,
         accessToken
       });
-    });
+    })
+    .catch(error => next(error));
 }
 
 
@@ -94,65 +96,68 @@ export const getUserInfo = (req: SessionRequest, res: Response, next: NextFuncti
   const userId = req.userId;
   return User.findOne({ _id: userId })
     .then(user => {
-      if (!user) {
-        throw new NotFoundError('Ошибка: Пользователь не найден');
-      }
       res.send({
         user: {
-          email: user.email,
-          name: user.name
+          email: user!.email,
+          name: user!.name
         },
         success: true
       });
     })
     .catch(error => next(error));
-}
+};
 
 
 export const refreshTokens = (req: Request, res: Response, next: NextFunction) => {
-  return getUserIdByRefreshToken(req)
-    .then(userId => {
-      if (!userId) {
-        throw new AuthorizationError('Ошибка: Неправильный токен');
-      }
+  const userIdPromise = getUserIdByRefreshToken(req, next);
+  if (userIdPromise) {
+    return userIdPromise
+      .then(userId => {
+        if (!userId) {
+          throw new AuthorizationError('Ошибка: Неправильный токен');
+        }
 
-      createTokens(userId, res);
-    })
-    .catch(error => next(error));
-}
+        createTokens(userId, res, next);
+      })
+      .catch(error => next(error));
+  }
+};
 
 
 export const logoutUser = (req: Request, res: Response, next: NextFunction) => {
-  return getUserIdByRefreshToken(req)
-    .then(userId => {
-      if (!userId) {
-        throw new AuthorizationError('Ошибка: Неправильный токен');
-      }
+  const userIdPromise = getUserIdByRefreshToken(req, next);
+  if (userIdPromise) {
+    return userIdPromise
+      .then(userId => {
+        if (!userId) {
+          throw new AuthorizationError('Ошибка: Неправильный токен');
+        }
 
-      return User.findOneAndUpdate(
-        { _id: userId },
-        { $set: { tokens: [] } },
-        { returnDocument: 'after' }
-      );
-    })
-    .then(user => {
-      if (!user) {
-        throw new Error('Ошибка: Токены не удалились из базы данных');
-      }
+        return User.findOneAndUpdate(
+          { _id: userId },
+          { $set: { tokens: [] } },
+          { returnDocument: 'after' }
+        );
+      })
+      .then(user => {
+        if (!user) {
+          throw new Error('Ошибка: Токены не удалились из базы данных');
+        }
 
-      res.cookie(COOKIE_NAME, '', {
-        sameSite: 'lax',
-        secure: false,
-        httpOnly: true,
-        path: '/',
-        maxAge: 0
-      });
-      res.send({
-        success: true
-      });
-    })
-    .catch(error => next(error));
-}
+        res.cookie(COOKIE_NAME, '', {
+          sameSite: 'lax',
+          secure: false,
+          httpOnly: true,
+          path: '/',
+          maxAge: 0
+        });
+        res.send({
+          success: true
+        });
+      })
+      .catch(error => next(error));
+  }
+};
 
 
 export const loginUser = (req: Request, res: Response, next: NextFunction) => {
@@ -163,10 +168,10 @@ export const loginUser = (req: Request, res: Response, next: NextFunction) => {
         throw new AuthorizationError('Ошибка: Неверный логин или пароль');
       }
 
-      createTokens((user._id as ObjectId).toString(), res);
+      createTokens((user._id as ObjectId).toString(), res, next);
     })
     .catch(error => next(error));
-}
+};
 
 
 export const registerUser = (req: Request, res: Response, next: NextFunction) => {
@@ -182,7 +187,7 @@ export const registerUser = (req: Request, res: Response, next: NextFunction) =>
       if (!user) {
         throw new BadRequestError('Ошибка: Ошибка регистрации нового пользователя');
       }
-      createTokens((user._id as ObjectId).toString(), res, 201);
+      createTokens((user._id as ObjectId).toString(), res, next, 201);
     })
     .catch(error => {
       if (error.code === 11000) {
@@ -191,4 +196,4 @@ export const registerUser = (req: Request, res: Response, next: NextFunction) =>
         next(error);
       }
     });
-}
+};
