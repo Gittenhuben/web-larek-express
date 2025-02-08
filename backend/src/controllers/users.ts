@@ -129,10 +129,6 @@ export const logoutUser = (req: Request, res: Response, next: NextFunction) => {
   if (userIdPromise) {
     return userIdPromise
       .then(userId => {
-        if (!userId) {
-          throw new AuthorizationError('Ошибка: Неправильный токен');
-        }
-
         return User.findOneAndUpdate(
           { _id: userId },
           { $set: { tokens: [] } },
